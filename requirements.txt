@@ -1,0 +1,8 @@
+Flask
+python-dotenv
+PyPDF
+python-docx
+sentence-transformers
+chromadb
+langchain-text-splitters
+requests
