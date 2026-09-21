@@ -16,8 +16,10 @@ load_dotenv()
 
 app = Flask(__name__)
 
+
 UPLOAD_FOLDER = "documents"
 CHROMA_FOLDER = "chroma_db"
+
 
 OLLAMA_URL = os.getenv(
     "OLLAMA_URL",
@@ -35,15 +37,24 @@ EMBEDDING_MODEL = os.getenv(
 )
 
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(CHROMA_FOLDER, exist_ok=True)
+os.makedirs(
+    UPLOAD_FOLDER,
+    exist_ok=True
+)
+
+os.makedirs(
+    CHROMA_FOLDER,
+    exist_ok=True
+)
 
 
 print("Loading embedding model...")
 
+
 embedding_model = SentenceTransformer(
     EMBEDDING_MODEL
 )
+
 
 print("Embedding model loaded.")
 
@@ -65,14 +76,22 @@ text_splitter = RecursiveCharacterTextSplitter(
 
 
 def extract_pdf(file_path):
+
     pages = []
 
-    reader = PdfReader(file_path)
+    reader = PdfReader(
+        file_path
+    )
 
-    for page_number, page in enumerate(reader.pages, start=1):
+    for page_number, page in enumerate(
+        reader.pages,
+        start=1
+    ):
+
         text = page.extract_text()
 
         if text:
+
             pages.append(
                 {
                     "text": text,
@@ -84,15 +103,24 @@ def extract_pdf(file_path):
 
 
 def extract_docx(file_path):
-    document = Document(file_path)
+
+    document = Document(
+        file_path
+    )
 
     text_parts = []
 
     for paragraph in document.paragraphs:
-        if paragraph.text.strip():
-            text_parts.append(paragraph.text)
 
-    full_text = "\n".join(text_parts)
+        if paragraph.text.strip():
+
+            text_parts.append(
+                paragraph.text
+            )
+
+    full_text = "\n".join(
+        text_parts
+    )
 
     return [
         {
@@ -103,11 +131,13 @@ def extract_docx(file_path):
 
 
 def extract_txt(file_path):
+
     with open(
         file_path,
         "r",
         encoding="utf-8"
     ) as file:
+
         text = file.read()
 
     return [
@@ -119,27 +149,43 @@ def extract_txt(file_path):
 
 
 def extract_document(file_path):
+
     extension = os.path.splitext(
         file_path
     )[1].lower()
 
     if extension == ".pdf":
-        return extract_pdf(file_path)
+
+        return extract_pdf(
+            file_path
+        )
 
     if extension == ".docx":
-        return extract_docx(file_path)
+
+        return extract_docx(
+            file_path
+        )
 
     if extension == ".txt":
-        return extract_txt(file_path)
+
+        return extract_txt(
+            file_path
+        )
 
     return []
 
 
-def create_chunks(pages, filename):
+def create_chunks(
+    pages,
+    filename
+):
+
     chunks = []
 
     for page_data in pages:
+
         text = page_data["text"]
+
         page_number = page_data["page"]
 
         text_chunks = text_splitter.split_text(
@@ -147,6 +193,7 @@ def create_chunks(pages, filename):
         )
 
         for chunk in text_chunks:
+
             chunks.append(
                 {
                     "text": chunk,
@@ -159,7 +206,9 @@ def create_chunks(pages, filename):
 
 
 def store_document(chunks):
+
     if not chunks:
+
         return 0
 
     texts = [
@@ -194,13 +243,19 @@ def store_document(chunks):
     return len(chunks)
 
 
-def retrieve_documents(question, top_k=4):
+def retrieve_documents(
+    question,
+    top_k=4
+):
+
     question_embedding = embedding_model.encode(
         question
     ).tolist()
 
     results = collection.query(
-        query_embeddings=[question_embedding],
+        query_embeddings=[
+            question_embedding
+        ],
         n_results=top_k
     )
 
@@ -220,6 +275,7 @@ def retrieve_documents(question, top_k=4):
         documents,
         metadatas
     ):
+
         retrieved.append(
             {
                 "text": document,
@@ -237,7 +293,11 @@ def retrieve_documents(question, top_k=4):
     return retrieved
 
 
-def generate_answer(question, context):
+def generate_answer(
+    question,
+    context
+):
+
     prompt = f"""
 You are DocuMind AI, an intelligent document assistant.
 
@@ -286,14 +346,20 @@ ANSWER:
 
 @app.route("/")
 def home():
+
     return render_template(
         "index.html"
     )
 
 
-@app.route("/upload", methods=["POST"])
+@app.route(
+    "/upload",
+    methods=["POST"]
+)
 def upload_document():
+
     if "file" not in request.files:
+
         return jsonify(
             {
                 "success": False,
@@ -304,6 +370,7 @@ def upload_document():
     file = request.files["file"]
 
     if file.filename == "":
+
         return jsonify(
             {
                 "success": False,
@@ -324,6 +391,7 @@ def upload_document():
     )[1].lower()
 
     if extension not in allowed_extensions:
+
         return jsonify(
             {
                 "success": False,
@@ -340,9 +408,12 @@ def upload_document():
         safe_filename
     )
 
-    file.save(file_path)
+    file.save(
+        file_path
+    )
 
     try:
+
         pages = extract_document(
             file_path
         )
@@ -366,6 +437,7 @@ def upload_document():
         )
 
     except Exception as error:
+
         return jsonify(
             {
                 "success": False,
@@ -374,9 +446,22 @@ def upload_document():
         )
 
 
-@app.route("/chat", methods=["POST"])
+@app.route(
+    "/chat",
+    methods=["POST"]
+)
 def chat():
+
     data = request.get_json()
+
+    if not data:
+
+        return jsonify(
+            {
+                "success": False,
+                "message": "Invalid request."
+            }
+        )
 
     question = data.get(
         "question",
@@ -384,6 +469,7 @@ def chat():
     ).strip()
 
     if not question:
+
         return jsonify(
             {
                 "success": False,
@@ -392,11 +478,13 @@ def chat():
         )
 
     try:
+
         retrieved = retrieve_documents(
             question
         )
 
         if not retrieved:
+
             return jsonify(
                 {
                     "success": True,
@@ -408,6 +496,7 @@ def chat():
         context_parts = []
 
         for item in retrieved:
+
             context_parts.append(
                 f"Source: {item['source']}\n"
                 f"Page: {item['page']}\n"
@@ -426,12 +515,14 @@ def chat():
         sources = []
 
         for item in retrieved:
+
             source_text = (
                 f"{item['source']} - "
                 f"Page {item['page']}"
             )
 
             if source_text not in sources:
+
                 sources.append(
                     source_text
                 )
@@ -445,14 +536,25 @@ def chat():
         )
 
     except requests.exceptions.ConnectionError:
+
         return jsonify(
             {
                 "success": False,
-                "message": "Ollama is not running."
+                "message": "Ollama is not reachable. Please check the OLLAMA_URL."
+            }
+        )
+
+    except requests.exceptions.Timeout:
+
+        return jsonify(
+            {
+                "success": False,
+                "message": "Ollama request timed out."
             }
         )
 
     except Exception as error:
+
         return jsonify(
             {
                 "success": False,
@@ -461,11 +563,16 @@ def chat():
         )
 
 
-@app.route("/clear", methods=["POST"])
+@app.route(
+    "/clear",
+    methods=["POST"]
+)
 def clear_database():
+
     global collection
 
     try:
+
         chroma_client.delete_collection(
             "documind_documents"
         )
@@ -482,6 +589,7 @@ def clear_database():
         )
 
     except Exception as error:
+
         return jsonify(
             {
                 "success": False,
@@ -491,6 +599,16 @@ def clear_database():
 
 
 if __name__ == "__main__":
+
+    port = int(
+        os.environ.get(
+            "PORT",
+            10000
+        )
+    )
+
     app.run(
-        debug=True
+        host="0.0.0.0",
+        port=port,
+        debug=False
     )
