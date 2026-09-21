@@ -17,9 +17,28 @@ load_dotenv()
 app = Flask(__name__)
 
 
+# =========================
+# FOLDERS
+# =========================
+
 UPLOAD_FOLDER = "documents"
 CHROMA_FOLDER = "chroma_db"
 
+
+os.makedirs(
+    UPLOAD_FOLDER,
+    exist_ok=True
+)
+
+os.makedirs(
+    CHROMA_FOLDER,
+    exist_ok=True
+)
+
+
+# =========================
+# ENVIRONMENT VARIABLES
+# =========================
 
 OLLAMA_URL = os.getenv(
     "OLLAMA_URL",
@@ -37,27 +56,34 @@ EMBEDDING_MODEL = os.getenv(
 )
 
 
-os.makedirs(
-    UPLOAD_FOLDER,
-    exist_ok=True
-)
+# =========================
+# EMBEDDING MODEL
+# LAZY LOADING
+# =========================
 
-os.makedirs(
-    CHROMA_FOLDER,
-    exist_ok=True
-)
+embedding_model = None
 
 
-print("Loading embedding model...")
+def get_embedding_model():
+
+    global embedding_model
+
+    if embedding_model is None:
+
+        print("Loading embedding model...")
+
+        embedding_model = SentenceTransformer(
+            EMBEDDING_MODEL
+        )
+
+        print("Embedding model loaded.")
+
+    return embedding_model
 
 
-embedding_model = SentenceTransformer(
-    EMBEDDING_MODEL
-)
-
-
-print("Embedding model loaded.")
-
+# =========================
+# CHROMA DATABASE
+# =========================
 
 chroma_client = chromadb.PersistentClient(
     path=CHROMA_FOLDER
@@ -69,11 +95,19 @@ collection = chroma_client.get_or_create_collection(
 )
 
 
+# =========================
+# TEXT SPLITTER
+# =========================
+
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=800,
     chunk_overlap=150
 )
 
+
+# =========================
+# PDF EXTRACTION
+# =========================
 
 def extract_pdf(file_path):
 
@@ -101,6 +135,10 @@ def extract_pdf(file_path):
 
     return pages
 
+
+# =========================
+# DOCX EXTRACTION
+# =========================
 
 def extract_docx(file_path):
 
@@ -130,6 +168,10 @@ def extract_docx(file_path):
     ]
 
 
+# =========================
+# TXT EXTRACTION
+# =========================
+
 def extract_txt(file_path):
 
     with open(
@@ -147,6 +189,10 @@ def extract_txt(file_path):
         }
     ]
 
+
+# =========================
+# DOCUMENT EXTRACTION
+# =========================
 
 def extract_document(file_path):
 
@@ -174,6 +220,10 @@ def extract_document(file_path):
 
     return []
 
+
+# =========================
+# CREATE CHUNKS
+# =========================
 
 def create_chunks(
     pages,
@@ -205,6 +255,10 @@ def create_chunks(
     return chunks
 
 
+# =========================
+# STORE DOCUMENT
+# =========================
+
 def store_document(chunks):
 
     if not chunks:
@@ -216,8 +270,13 @@ def store_document(chunks):
         for chunk in chunks
     ]
 
-    embeddings = embedding_model.encode(
-        texts
+    # Load embedding model only when needed
+    model = get_embedding_model()
+
+    embeddings = model.encode(
+        texts,
+        batch_size=8,
+        show_progress_bar=False
     ).tolist()
 
     ids = [
@@ -243,20 +302,41 @@ def store_document(chunks):
     return len(chunks)
 
 
+# =========================
+# RETRIEVE DOCUMENTS
+# =========================
+
 def retrieve_documents(
     question,
     top_k=4
 ):
 
-    question_embedding = embedding_model.encode(
-        question
+    # Check whether documents exist
+    collection_count = collection.count()
+
+    if collection_count == 0:
+
+        return []
+
+    # Avoid requesting more results than available
+    actual_top_k = min(
+        top_k,
+        collection_count
+    )
+
+    # Load embedding model only when needed
+    model = get_embedding_model()
+
+    question_embedding = model.encode(
+        question,
+        show_progress_bar=False
     ).tolist()
 
     results = collection.query(
         query_embeddings=[
             question_embedding
         ],
-        n_results=top_k
+        n_results=actual_top_k
     )
 
     documents = results.get(
@@ -292,6 +372,10 @@ def retrieve_documents(
 
     return retrieved
 
+
+# =========================
+# GENERATE ANSWER USING OLLAMA
+# =========================
 
 def generate_answer(
     question,
@@ -344,6 +428,10 @@ ANSWER:
     )
 
 
+# =========================
+# HOME PAGE
+# =========================
+
 @app.route("/")
 def home():
 
@@ -351,6 +439,10 @@ def home():
         "index.html"
     )
 
+
+# =========================
+# UPLOAD DOCUMENT
+# =========================
 
 @app.route(
     "/upload",
@@ -408,15 +500,24 @@ def upload_document():
         safe_filename
     )
 
-    file.save(
-        file_path
-    )
-
     try:
+
+        file.save(
+            file_path
+        )
 
         pages = extract_document(
             file_path
         )
+
+        if not pages:
+
+            return jsonify(
+                {
+                    "success": False,
+                    "message": "No readable text found in the document."
+                }
+            )
 
         chunks = create_chunks(
             pages,
@@ -438,6 +539,11 @@ def upload_document():
 
     except Exception as error:
 
+        print(
+            "Upload error:",
+            error
+        )
+
         return jsonify(
             {
                 "success": False,
@@ -445,6 +551,10 @@ def upload_document():
             }
         )
 
+
+# =========================
+# CHAT
+# =========================
 
 @app.route(
     "/chat",
@@ -555,6 +665,11 @@ def chat():
 
     except Exception as error:
 
+        print(
+            "Chat error:",
+            error
+        )
+
         return jsonify(
             {
                 "success": False,
@@ -562,6 +677,10 @@ def chat():
             }
         )
 
+
+# =========================
+# CLEAR DATABASE
+# =========================
 
 @app.route(
     "/clear",
@@ -597,6 +716,10 @@ def clear_database():
             }
         )
 
+
+# =========================
+# RUN APPLICATION
+# =========================
 
 if __name__ == "__main__":
 
